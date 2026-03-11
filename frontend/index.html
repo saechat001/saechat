@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SaeChat — simple</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;background:#0f172a;color:#fff;margin:0;padding:16px}
+    .card{background:#111827;padding:12px;border-radius:8px;margin-bottom:12px}
+    input,textarea{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#fff}
+    button{background:#fff;color:#0f172a;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    img.post{max-width:100%;border-radius:6px;margin-top:8px}
+  </style>
+</head>
+<body>
+  <h1>SaeChat (simple)</h1>
+
+  <div id="auth" class="card">
+    <h3>Register / Login</h3>
+    <input id="email" placeholder="email" />
+    <input id="username" placeholder="username (for register)" />
+    <input id="password" type="password" placeholder="password" />
+    <div style="display:flex;gap:8px">
+      <button id="btnRegister">Register</button>
+      <button id="btnLogin">Login</button>
+    </div>
+    <div id="authMsg"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <h3>Create post</h3>
+      <textarea id="postText" placeholder="Say something..."></textarea>
+      <input id="postImage" type="file" />
+      <button id="btnPost">Post</button>
+    </div>
+
+    <div id="feed"></div>
+    <button id="btnLogout" style="margin-top:12px">Logout</button>
+  </div>
+
+<script>
+const API_BASE = prompt("Paste your backend URL (e.g. https://your-backend-url)") || location.origin;
+
+// helper
+async function api(path, opts = {}) {
+  opts.headers = opts.headers || {};
+  const t = localStorage.getItem('token');
+  if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  const res = await fetch(API_BASE + path, opts);
+  return res.json();
+}
+
+document.getElementById('btnRegister').onclick = async () => {
+  const email = document.getElementById('email').value;
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const r = await api('/api/auth/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email, username, password }) });
+  if (r.token) { localStorage.setItem('token', r.token); showApp(); } else document.getElementById('authMsg').innerText = r.error || JSON.stringify(r);
+};
+
+document.getElementById('btnLogin').onclick = async () => {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const r = await api('/api/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
+  if (r.token) { localStorage.setItem('token', r.token); showApp(); } else document.getElementById('authMsg').innerText = r.error || JSON.stringify(r);
+};
+
+async function refreshFeed(){
+  const feed = document.getElementById('feed');
+  const posts = await api('/api/posts/feed').catch(()=>[]);
+  feed.innerHTML = posts.map(p => `
+    <div class="card">
+      <div style="font-weight:700">${p.author?.username||'anon'}</div>
+      <div>${escapeHtml(p.text||'')}</div>
+      ${p.imageUrl? `<img class="post" src="${API_BASE + p.imageUrl}" />` : ''}
+      <div style="margin-top:8px"><button data-id="${p.id}" class="likeBtn">♡ ${p.likes?.length||0}</button></div>
+    </div>
+  `).join('');
+  document.querySelectorAll('.likeBtn').forEach(b=> b.onclick = async e=>{
+    const id = e.target.dataset.id;
+    await api('/api/posts/' + id + '/like', { method: 'POST' }); refreshFeed();
+  });
+}
+
+document.getElementById('btnPost').onclick = async () => {
+  const txt = document.getElementById('postText').value;
+  const file = document.getElementById('postImage').files[0];
+  const form = new FormData();
+  form.append('text', txt);
+  if(file) form.append('image', file);
+  const token = localStorage.getItem('token');
+  await fetch(API_BASE + '/api/posts', { method:'POST', body: form, headers:{ 'Authorization': 'Bearer ' + token } });
+  document.getElementById('postText').value = '';
+  document.getElementById('postImage').value = '';
+  refreshFeed();
+};
+
+document.getElementById('btnLogout').onclick = () => { localStorage.removeItem('token'); location.reload(); };
+
+function showApp(){ document.getElementById('auth').style.display='none'; document.getElementById('app').style.display=''; refreshFeed(); }
+if(localStorage.getItem('token')) showApp();
+
+function escapeHtml(s){ return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+</script>
+</body>
+</html>
